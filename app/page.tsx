@@ -3,10 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Deal, Tri, AssignmentType, getDeals, createDeal, updateDeal, deleteDeal } from '../lib/deals';
 
-const USERS = [
-  '結衣', '田中', '佐藤', '鈴木', '高橋',
-  '伊藤', '渡辺', '小林', '加藤', '山本',
-];
+const DEFAULT_USERS = ['host', '赤城', 'user_1', 'user_2'];
 
 const TRI_SCORE: Record<Tri, number> = { 高: 3, 中: 2, 低: 1 };
 
@@ -35,6 +32,7 @@ export default function Page() {
 
   // Config
   const [me, setMe] = useState<string>('');
+  const [users, setUsers] = useState<string[]>(DEFAULT_USERS);
 
   // Data
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -44,7 +42,7 @@ export default function Page() {
   // Filters
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'全件' | '自分担当' | '任せる' | '自分で' | '期限切れ'>('自分担当');
-  const [sortBy, setSortBy] = useState<'期限が近い順' | '重要度' | '急ぎ度' | '利益度' | '新しい順'>('期限が近い順');
+  const [sortBy, setSortBy] = useState<'期限が近い順' | '重要度' | '急ぎ度' | '利益度' | '新しい順' | '古い順'>('期限が近い順');
 
   // Form
   const [clientName, setClientName] = useState('');
@@ -72,6 +70,19 @@ export default function Page() {
       setIsPinVerified(true);
     }
   }, []);
+
+  // Load users from localStorage
+  useEffect(() => {
+    if (!isPinVerified) return;
+    const savedUsers = localStorage.getItem('matip_users');
+    if (savedUsers) {
+      try {
+        setUsers(JSON.parse(savedUsers));
+      } catch (e) {
+        setUsers(DEFAULT_USERS);
+      }
+    }
+  }, [isPinVerified]);
 
   // Load user from localStorage
   useEffect(() => {
@@ -117,6 +128,36 @@ export default function Page() {
   const logout = () => {
     setMe('');
     localStorage.removeItem('matip_me');
+  };
+
+  // Add user
+  const addUser = () => {
+    const newName = prompt('新しいユーザー名を入力してください:');
+    if (!newName || !newName.trim()) return;
+    const trimmedName = newName.trim();
+    if (users.includes(trimmedName)) {
+      alert('このユーザーは既に存在します');
+      return;
+    }
+    const updatedUsers = [...users, trimmedName];
+    setUsers(updatedUsers);
+    localStorage.setItem('matip_users', JSON.stringify(updatedUsers));
+  };
+
+  // Remove user
+  const removeUser = (name: string) => {
+    if (users.length <= 1) {
+      alert('最低1人のユーザーが必要です');
+      return;
+    }
+    if (name === me) {
+      alert('現在ログイン中のユーザーは削除できません');
+      return;
+    }
+    if (!confirm(`「${name}」を削除しますか？`)) return;
+    const updatedUsers = users.filter(u => u !== name);
+    setUsers(updatedUsers);
+    localStorage.setItem('matip_users', JSON.stringify(updatedUsers));
   };
 
   // Submit new deal
@@ -226,6 +267,7 @@ export default function Page() {
       急ぎ度: (a, b) => TRI_SCORE[b.urgency] - TRI_SCORE[a.urgency],
       '利益度': (a, b) => TRI_SCORE[b.profit] - TRI_SCORE[a.profit],
       新しい順: (a, b) => b.created_at.localeCompare(a.created_at),
+      古い順: (a, b) => a.created_at.localeCompare(b.created_at),
     };
     return [...list].sort(sorters[sortBy]);
   }, [deals, tab, query, filter, sortBy, me]);
@@ -272,18 +314,32 @@ export default function Page() {
         <div className="login-card">
           <h1 className="brand" style={{ textAlign: 'center', fontSize: '24px', marginBottom: '8px' }}>matip</h1>
           <p style={{ textAlign: 'center', color: '#64748b', marginBottom: '32px' }}>担当者を選択して開始</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {USERS.map(u => (
-              <button
-                key={u}
-                className="glass-panel"
-                style={{ padding: '16px', borderRadius: '12px', border: 'none', cursor: 'pointer', fontWeight: 'bold', color: '#334155' }}
-                onClick={() => handleLogin(u)}
-              >
-                {u}
-              </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+            {users.map(u => (
+              <div key={u} style={{ position: 'relative' }}>
+                <button
+                  className="glass-panel"
+                  style={{ width: '100%', padding: '16px', borderRadius: '12px', border: 'none', cursor: 'pointer', fontWeight: 'bold', color: '#334155' }}
+                  onClick={() => handleLogin(u)}
+                >
+                  {u}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeUser(u); }}
+                  style={{ position: 'absolute', top: '4px', right: '4px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: '24px', height: '24px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                  title="このユーザーを削除"
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
+          <button
+            onClick={addUser}
+            style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            + 新規ユーザー追加
+          </button>
         </div>
       </div>
     );
@@ -402,7 +458,7 @@ export default function Page() {
 
               {assignmentType === '任せる' && (
                 <select className="input-field" value={assignee} onChange={e => setAssignee(e.target.value)}>
-                  {USERS.map(u => <option key={u}>{u}</option>)}
+                  {users.map(u => <option key={u}>{u}</option>)}
                 </select>
               )}
             </div>
@@ -461,6 +517,7 @@ export default function Page() {
                 <option value="急ぎ度">急ぎ度</option>
                 <option value="利益度">利益度</option>
                 <option value="新しい順">新しい順</option>
+                <option value="古い順">古い順</option>
               </select>
             </div>
 
